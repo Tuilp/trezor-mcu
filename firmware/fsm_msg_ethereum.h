@@ -89,9 +89,9 @@ void fsm_msgEthereumGetAddress(const EthereumGetAddress *msg)
 	const HDNode *node = fsm_getDerivedNode(SECP256K1_NAME, msg->address_n, msg->address_n_count, NULL);
 	if (!node) return;
 
-	resp->address.size = 20;
+	uint8_t pubkeyhash[20];
 
-	if (!hdnode_get_ethereum_pubkeyhash(node, resp->address.bytes))
+	if (!hdnode_get_ethereum_pubkeyhash(node, pubkeyhash))
 		return;
 
 	if (msg->has_show_display && msg->show_display) {
@@ -107,10 +107,12 @@ void fsm_msgEthereumGetAddress(const EthereumGetAddress *msg)
 			case 37310: rskip60 = true; chain_id = 31; break;
 		}
 
-		char address[43] = { '0', 'x' };
-		ethereum_address_checksum(resp->address.bytes, address + 2, rskip60, chain_id);
+		resp->address[0] = '0';
+		resp->address[1] = 'x';
+		ethereum_address_checksum(pubkeyhash, resp->address + 2, rskip60, chain_id);
+		// ethereum_address_checksum adds trailing zero
 
-		if (!fsm_layoutAddress(address, desc, false, 0, msg->address_n, msg->address_n_count, true)) {
+		if (!fsm_layoutAddress(resp->address, desc, false, 0, msg->address_n, msg->address_n_count, true)) {
 			return;
 		}
 	}
@@ -151,9 +153,13 @@ void fsm_msgEthereumVerifyMessage(const EthereumVerifyMessage *msg)
 		return;
 	}
 
-	char address[43] = { '0', 'x' };
-	ethereum_address_checksum(msg->address.bytes, address + 2, false, 0);
-	layoutVerifyAddress(NULL, address);
+	uint8_t pubkeyhash[20];
+	if (!ethereum_parse(msg->address, pubkeyhash)) {
+		fsm_sendFailure(FailureType_Failure_DataError, _("Invalid address"));
+		return;
+	}
+
+	layoutVerifyAddress(NULL, msg->address);
 	if (!protectButton(ButtonRequestType_ButtonRequest_Other, false)) {
 		fsm_sendFailure(FailureType_Failure_ActionCancelled, NULL);
 		layoutHome();
